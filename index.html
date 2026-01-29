@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Web BLE App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body>
+<div class="topnav">
+    <h1>ESP32 Web BLE Application</h1>
+</div>
+
+<div class="content">
+    <div class="card-grid">
+        <div class="card">
+            <button id="connectBleButton" class="connectButton">Connect</button>
+            <button id="disconnectBleButton" class="disconnectButton">Disconnect</button>
+
+            <p class="gray-label">BLE state:
+                <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong>
+            </p>
+        </div>
+    </div>
+
+    <div class="card-grid">
+
+        <!-- 🌡 Temperature -->
+        <div class="card">
+            <h2>Temperature</h2>
+            <p class="reading"><span id="tempValue">NaN</span></p>
+            <p class="gray-label">Last reading: <span id="timestampTemp"></span></p>
+        </div>
+
+        <!-- ❤️ Heart Rate -->
+        <div class="card">
+            <h2>Heart Rate</h2>
+            <p class="reading"><span id="hrValue">NaN</span></p>
+            <p class="gray-label">Last reading: <span id="timestampHR"></span></p>
+        </div>
+
+        <!-- 🩸 SpO2 -->
+        <div class="card">
+            <h2>SpO₂</h2>
+            <p class="reading"><span id="spo2Value">NaN</span> %</p>
+            <p class="gray-label">Last reading: <span id="timestampSpO2"></span></p>
+        </div>
+
+        <!-- 💡 LED Control -->
+        <div class="card">
+            <h2>Control GPIO 2</h2>
+            <button id="onButton" class="onButton">ON</button>
+            <button id="offButton" class="offButton">OFF</button>
+            <p class="gray-label">Last value sent: <span id="valueSent"></span></p>
+        </div>
+
+    </div>
+</div>
+
+<script>
+const deviceName = 'ESP32_PIM';
+
+const bleService = '19b10000-e8f2-537e-4f6c-d104768a1214';
+const tempCharUUID = '19b10001-e8f2-537e-4f6c-d104768a1214';
+const ledCharUUID  = '19b10002-e8f2-537e-4f6c-d104768a1214';
+const hrCharUUID   = '19b10003-e8f2-537e-4f6c-d104768a1214';
+// ถ้าคุณเพิ่ม SpO2 ใน ESP32 ให้สร้าง UUID ใหม่
+const spo2CharUUID = '19b10004-e8f2-537e-4f6c-d104768a1214';
+
+let bleServer, bleServiceFound;
+
+const bleState = document.getElementById("bleState");
+const tempValue = document.getElementById("tempValue");
+const hrValue = document.getElementById("hrValue");
+const spo2Value = document.getElementById("spo2Value");
+
+const tsTemp = document.getElementById("timestampTemp");
+const tsHR = document.getElementById("timestampHR");
+const tsSpO2 = document.getElementById("timestampSpO2");
+
+document.getElementById("connectBleButton").onclick = connectBLE;
+document.getElementById("disconnectBleButton").onclick = disconnectBLE;
+document.getElementById("onButton").onclick = () => writeLED(1);
+document.getElementById("offButton").onclick = () => writeLED(0);
+
+function connectBLE() {
+    navigator.bluetooth.requestDevice({
+        filters: [{ name: deviceName }],
+        optionalServices: [bleService]
+    })
+    .then(device => {
+        bleState.innerHTML = "Connected";
+        bleState.style.color = "#24af37";
+        device.addEventListener('gattservicedisconnected', disconnectBLE);
+        return device.gatt.connect();
+    })
+    .then(server => {
+        bleServer = server;
+        return server.getPrimaryService(bleService);
+    })
+    .then(service => {
+        bleServiceFound = service;
+        subscribeCharacteristic(tempCharUUID, tempValue, tsTemp);
+        subscribeCharacteristic(hrCharUUID, hrValue, tsHR);
+        subscribeCharacteristic(spo2CharUUID, spo2Value, tsSpO2);
+    })
+    .catch(err => console.log(err));
+}
+
+function subscribeCharacteristic(uuid, element, ts) {
+    bleServiceFound.getCharacteristic(uuid)
+    .then(ch => {
+        ch.addEventListener('characteristicvaluechanged', e => {
+            element.innerHTML = new TextDecoder().decode(e.target.value);
+            ts.innerHTML = new Date().toLocaleString();
+        });
+        ch.startNotifications();
+    })
+    .catch(() => {}); // ถ้ายังไม่มี SpO2 จะไม่ error
+}
+
+function writeLED(val) {
+    bleServiceFound.getCharacteristic(ledCharUUID)
+    .then(ch => {
+        ch.writeValue(new Uint8Array([val]));
+        document.getElementById("valueSent").innerHTML = val;
+    });
+}
+
+function disconnectBLE() {
+    if (bleServer) bleServer.disconnect();
+    bleState.innerHTML = "Disconnected";
+    bleState.style.color = "#d13a30";
+}
+</script>
+</body>
+</html>
